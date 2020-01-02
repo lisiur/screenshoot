@@ -12,7 +12,7 @@
     "typescript": "^3.7.4"
   },
   "scripts": {
-    "docker:push": "npx tsc && docker push lisiur/screenshoot:v1",
+    "docker:push": "npx tsc && docker build -t lisiur/screenshoot:v1 . && docker push lisiur/screenshoot:v1",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
