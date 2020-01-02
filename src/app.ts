@@ -1,43 +1,40 @@
 import os from 'os'
 import fs from 'fs'
-import Koa from 'koa'
-import puppeteer from 'puppeteer-core'
 import path from 'path'
-import serve from 'koa-static'
-import { v4 as uuid } from 'uuid'
+import http from 'http'
+import url from 'url'
+import puppeteer from 'puppeteer-core'
+import {wait, generateId} from './utils'
 import './init'
 
-const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
-
-const app = new Koa()
-app.use(serve(path.join(__dirname, '../out')))
-app.use(async (ctx, next) => {
-  if (ctx.method === 'GET' && ctx.url.startsWith('/screenshoot')) {
-    const url = decodeURIComponent(ctx.query.url)
-    const { type = 'image', width, height, wait: waitms = 0, filename = '' } = ctx.query
+http.createServer(async(request, response) => {
+  const requestMethod = request.method
+  const requestUrl = request.url ?? ''
+  if (requestMethod === 'GET' && requestUrl.startsWith('/screenshoot')) {
+    const query = url.parse(requestUrl, true).query
+    const { type = 'image', width = '800', height = '600', wait: waitms = '0', filename = '' } = query
+    const sourceUrl = decodeURIComponent(query.url as string)
     let filepath: string
     let fileId: string
     switch (type) {
       case 'image': {
-        fileId = uuid() + '.png'
+        fileId = generateId() + '.png'
         filepath = path.resolve(__dirname, `../out/image/${fileId}`)
         break
       }
       case 'pdf': {
-        fileId = uuid() + '.pdf'
+        fileId = generateId() + '.pdf'
         filepath = path.resolve(__dirname, `../out/pdf/${fileId}`)
         break
       }
       default: {
-        ctx.body = {
-          code: '1',
-          message: `不支持该类型[${type}]`,
-          data: null,
-        }
+        response.writeHead(400)
+        response.write(`不支持该类型[${type}]`)
+        response.end()
         return
       }
     }
-    await screenshoot(url, filepath, { width, height, type, waitms })
+    await screenshoot(sourceUrl, filepath, { width: +width, height: +height, type, waitms: +waitms })
     // 定时删除
     setTimeout(() => {
       fs.unlink(filepath, (error) => {
@@ -46,19 +43,21 @@ app.use(async (ctx, next) => {
         }
       })
     }, 1 * 60 * 1000)
-    ctx.set({
+    response.writeHead(200, {
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': `attachment; filename=${filename || fileId}`,
     })
-    ctx.body = fs.createReadStream(filepath)
+    const readStream = fs.createReadStream(filepath)
+    readStream.on('open', () => {
+      readStream.pipe(response)
+    })
+    readStream.on('error', (err) => {
+      response.end(err)
+    })
   } else {
-    ctx.status = 404
+    response.writeHead(404).end()
   }
-})
-
-app.listen(3000, () => {
-  console.log('http://localhost:3000')
-})
+}).listen(3000)
 
 async function screenshoot(url: string, filename: string, {
   width = 800,
